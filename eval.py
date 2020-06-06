@@ -84,11 +84,18 @@ if cuda:
 model_name = opt.model
 
 if not model_name:
-    model_name = 'weights/RBPN_' + str(opt.upscale_factor) + 'x.pth'
+    # Loading the NTIRE2019 model doesn't actually work (size missmatch)
+    if False and opt.upscale_factor == 4:
+        model_name = 'weights/RBPN_4x_F11_NTIRE2019.pth'
+    else:
+        model_name = 'weights/RBPN_' + str(opt.upscale_factor) + 'x.pth'
 
 print('===> Using pretrained model', model_name)
+model_state_dict = torch.load(model_name, map_location=lambda storage, loc: storage)
 
-model.load_state_dict(torch.load(model_name, map_location=lambda storage, loc: storage))
+print('===> Loading model dict')
+model.load_state_dict(model_state_dict)
+
 print('===> Pre-trained SR model is loaded.')
 print('')
 
