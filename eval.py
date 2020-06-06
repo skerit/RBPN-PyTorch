@@ -11,6 +11,7 @@ from rbpn import Net as RBPN
 from data import get_test_set
 from functools import reduce
 import numpy as np
+import sys
 
 from scipy.misc import imsave
 import scipy.io as sio
@@ -21,10 +22,12 @@ import pdb
 
 # Training settings
 parser = argparse.ArgumentParser(description='PyTorch Super Res Example')
-parser.add_argument('--upscale_factor', type=int, default=4, help="super resolution upscale factor")
+parser.add_argument('--upscale_factor', type=int, default=2, help="super resolution upscale factor")
 parser.add_argument('--testBatchSize', type=int, default=1, help='testing batch size')
 parser.add_argument('--gpu_mode', type=bool, default=True)
+
 parser.add_argument('--chop_forward', type=bool, default=False)
+parser.add_argument('--chop_size', type=int, default=2000, help='maximum size of chopped pieces (bigger == faster but more memory)')
 
 # Use 0 by default, because anything higher causes errors on Python 3.5
 parser.add_argument('--threads', type=int, default=0, help='number of threads for data loader to use')
@@ -39,13 +42,13 @@ parser.add_argument('--nFrames', type=int, default=7)
 parser.add_argument('--model_type', type=str, default='RBPN')
 parser.add_argument('--residual', type=bool, default=False)
 parser.add_argument('--output', default='Results/', help='Location to save checkpoint models')
-parser.add_argument('--model', default='weights/RBPN_4x.pth', help='sr pretrained base model')
+parser.add_argument('--model', default='', help='sr pretrained base model')
 
 opt = parser.parse_args()
 
 gpus_list=range(opt.gpus)
 
-print('These options will be used:')
+print('These options were given:')
 print(opt)
 print('')
 
@@ -55,6 +58,13 @@ cuda = True
 if cuda and not torch.cuda.is_available():
     raise Exception("No GPU found, this script requires an nVidia CUDA card")
 
+if sys.version_info.major <= 2 or (sys.version_info.major == 3 and sys.version_info.minor <= 4):
+    print('This script requires Python >=3.5')
+
+if sys.version_info.minor == 5:
+    print('===> Disabling cpu threads because of a bug in Python 3.5')
+    opt.threads = 0
+
 torch.manual_seed(opt.seed)
 if cuda:
     torch.cuda.manual_seed(opt.seed)
@@ -63,14 +73,22 @@ print('===> Loading datasets')
 test_set = get_test_set(opt.data_dir, opt.nFrames, opt.upscale_factor, opt.file_list, opt.other_dataset, opt.future_frame)
 testing_data_loader = DataLoader(dataset=test_set, num_workers=opt.threads, batch_size=opt.testBatchSize, shuffle=False)
 
-print('===> Building model ', opt.model_type)
+print('===> Building model', opt.model_type)
+
 if opt.model_type == 'RBPN':
-    model = RBPN(num_channels=3, base_filter=256,  feat = 64, num_stages=3, n_resblock=5, nFrames=opt.nFrames, scale_factor=opt.upscale_factor)
+    model = RBPN(num_channels=3, base_filter=256, feat = 64, num_stages=3, n_resblock=5, nFrames=opt.nFrames, scale_factor=opt.upscale_factor)
 
 if cuda:
     model = torch.nn.DataParallel(model, device_ids=gpus_list)
 
-model.load_state_dict(torch.load(opt.model, map_location=lambda storage, loc: storage))
+model_name = opt.model
+
+if not model_name:
+    model_name = 'weights/RBPN_' + str(opt.upscale_factor) + 'x.pth'
+
+print('===> Using pretrained model', model_name)
+
+model.load_state_dict(torch.load(model_name, map_location=lambda storage, loc: storage))
 print('===> Pre-trained SR model is loaded.')
 print('')
 
@@ -87,25 +105,32 @@ def eval():
     for batch in testing_data_loader:
         input, target, neigbor, flow, bicubic = batch[0], batch[1], batch[2], batch[3], batch[4]
 
+        # Deactivate autograd engine
         with torch.no_grad():
+            print(' ↱ Loading into memory...')
             input = Variable(input).cuda(gpus_list[0])
             bicubic = Variable(bicubic).cuda(gpus_list[0])
             neigbor = [Variable(j).cuda(gpus_list[0]) for j in neigbor]
             flow = [Variable(j).cuda(gpus_list[0]).float() for j in flow]
+            print(' ↱ Loaded into memory!')
 
         t0 = time.time()
         if opt.chop_forward:
             with torch.no_grad():
-                prediction = chop_forward(input, neigbor, flow, model, opt.upscale_factor)
+                print(' ↱ Predicting using chopping size of', opt.chop_size)
+                prediction = chop_forward(input, neigbor, flow, model, opt.upscale_factor, min_size=opt.chop_size)
         else:
             with torch.no_grad():
+                print(' ↱ Predicting...')
                 prediction = model(input, neigbor, flow)
-        
+
+        print(' ↱ Done!')
+
         if opt.residual:
             prediction = prediction + bicubic
-            
+
         t1 = time.time()
-        print("===> Processing: %s || Timer: %.4f sec." % (str(count), (t1 - t0)))
+        print("===> Processed: %s || Timer: %.4f sec." % (str(count), (t1 - t0)))
         save_img(prediction.cpu().data, str(count), True)
         print('')
         #save_img(target, str(count), False)
@@ -188,4 +213,15 @@ def chop_forward(x, neigbor, flow, model, scale, shave=8, min_size=2000, nGPUs=o
     return output
 
 ##Eval Start!!!!
-eval()
+try:
+    eval()
+except RuntimeError as err:
+    print('')
+    print('! Error !')
+    print(err)
+
+    if 'out of memory' in str(err):
+        if opt.chop_forward:
+            print('Ran out of memory, even with --chop_forward=True. Try lowering the chopping size using --chop_size (current size is ' + str(opt.chop_size) + ')')
+        else:
+            print('Try setting the --chop_forward=True flag to reduce CUDA memory usage')

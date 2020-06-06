@@ -45,11 +45,26 @@ def load_img(filepath, nFrames, scale, other_dataset):
 def load_img_future(filepath, nFrames, scale, other_dataset):
     tt = int(nFrames/2)
     if other_dataset:
-        target = modcrop(Image.open(filepath).convert('RGB'),scale)
-        input = target.resize((int(target.size[0]/scale),int(target.size[1]/scale)), Image.BICUBIC)
-        
+        #target = modcrop(Image.open(filepath).convert('RGB'), scale)
+        #input  = target.copy()
+
+        print(' ↱ Opening input image')
+        input = modcrop(Image.open(filepath).convert('RGB'), scale)
+
+        target_width = int(input.size[0] * scale)
+        target_height = int(input.size[1] * scale)
+
+        print(' ↱ Creating target image of %sx%s' % (target_width, target_height))
+
+        #target = target.resize((target_width, target_height), Image.BICUBIC)
+        target = Image.new('RGB', (target_width, target_height))
+
+        #target = modcrop(Image.open(filepath).convert('RGB'),scale)
+        #input = target.resize((int(target.size[0]/scale),int(target.size[1]/scale)), Image.BICUBIC)
+
         char_len = len(filepath)
         neigbor=[]
+
         if nFrames%2 == 0:
             seq = [x for x in range(-tt,tt) if x!=0] # or seq = [x for x in range(-tt+1,tt+1) if x!=0]
         else:
@@ -60,25 +75,43 @@ def load_img_future(filepath, nFrames, scale, other_dataset):
             file_name1=filepath[0:char_len-7]+'{0:03d}'.format(index1)+'.png'
             
             if os.path.exists(file_name1):
-                temp = modcrop(Image.open(file_name1).convert('RGB'), scale).resize((int(target.size[0]/scale),int(target.size[1]/scale)), Image.BICUBIC)
+                print(' ↱ Opening neighboring frame', file_name1)
+                temp = modcrop(Image.open(file_name1).convert('RGB'), scale)
                 neigbor.append(temp)
             else:
                 print(' ↱ Neighboring frame',file_name1, 'does not exist')
                 temp=input
                 neigbor.append(temp)
-            
     else:
-        target = modcrop(Image.open(join(filepath,'im4.png')).convert('RGB'),scale)
-        input = target.resize((int(target.size[0]/scale),int(target.size[1]/scale)), Image.BICUBIC)
+        print(' ↱ Opening input image')
+        input = modcrop(Image.open(join(filepath,'im4.png')).convert('RGB'), scale)
+
+        target_width = int(input.size[0] * scale)
+        target_height = int(input.size[1] * scale)
+
+        print(' ↱ Creating target image of %sx%s' % (target_width, target_height))
+
+        target = Image.new('RGB', (target_width, target_height))
+
         neigbor = []
         seq = [x for x in range(4-tt,5+tt) if x!=4]
         #random.shuffle(seq) #if random sequence
         for j in seq:
-            neigbor.append(modcrop(Image.open(filepath+'/im'+str(j)+'.png').convert('RGB'), scale).resize((int(target.size[0]/scale),int(target.size[1]/scale)), Image.BICUBIC))
+            temp = modcrop(Image.open(filepath+'/im'+str(j)+'.png').convert('RGB'), scale)
+            neigbor.append(temp)
 
     return target, input, neigbor
 
 def get_flow(im1, im2):
+
+    # Resizing this won't work, it causes a dimension mismatch
+    # width, height = im1.size
+    # width = int(width / 2)
+    # height = int(height / 2)
+
+    # im1 = im1.resize((width, height), Image.BICUBIC)
+    # im2 = im2.resize((width, height), Image.BICUBIC)
+
     im1 = np.array(im1)
     im2 = np.array(im2)
     im1 = im1.astype(float) / 255.
@@ -96,6 +129,7 @@ def get_flow(im1, im2):
     u, v, im2W = pyflow.coarse2fine_flow(im1, im2, alpha, ratio, minWidth, nOuterFPIterations, nInnerFPIterations,nSORIterations, colType)
     flow = np.concatenate((u[..., None], v[..., None]), axis=2)
     #flow = rescale_flow(flow,0,1)
+
     return flow
 
 def rescale_flow(x,max_range,min_range):
@@ -221,8 +255,10 @@ class DatasetFromFolderTest(data.Dataset):
         else:
             target, input, neigbor = load_img(self.image_filenames[index], self.nFrames, self.upscale_factor, self.other_dataset)
 
+        print(' ↱ Getting input flow...')
         flow = [get_flow(input,j) for j in neigbor]
 
+        print(' ↱ Bicubic rescaling input frame')
         bicubic = rescale_img(input, self.upscale_factor)
 
         if self.transform:
