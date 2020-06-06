@@ -44,11 +44,16 @@ parser.add_argument('--model', default='weights/RBPN_4x.pth', help='sr pretraine
 opt = parser.parse_args()
 
 gpus_list=range(opt.gpus)
+
+print('These options will be used:')
 print(opt)
+print('')
 
 cuda = opt.gpu_mode
+cuda = True
+
 if cuda and not torch.cuda.is_available():
-    raise Exception("No GPU found, please run without --cuda")
+    raise Exception("No GPU found, this script requires an nVidia CUDA card")
 
 torch.manual_seed(opt.seed)
 if cuda:
@@ -66,7 +71,8 @@ if cuda:
     model = torch.nn.DataParallel(model, device_ids=gpus_list)
 
 model.load_state_dict(torch.load(opt.model, map_location=lambda storage, loc: storage))
-print('Pre-trained SR model is loaded.')
+print('===> Pre-trained SR model is loaded.')
+print('')
 
 if cuda:
     model = model.cuda(gpus_list[0])
@@ -75,9 +81,12 @@ def eval():
     model.eval()
     count=1
     avg_psnr_predicted = 0.0
+
+    print('===> Starting eval')
+
     for batch in testing_data_loader:
         input, target, neigbor, flow, bicubic = batch[0], batch[1], batch[2], batch[3], batch[4]
-        
+
         with torch.no_grad():
             input = Variable(input).cuda(gpus_list[0])
             bicubic = Variable(bicubic).cuda(gpus_list[0])
@@ -90,7 +99,7 @@ def eval():
                 prediction = chop_forward(input, neigbor, flow, model, opt.upscale_factor)
         else:
             with torch.no_grad():
-                prediction = model(input, neigbor, flow) 
+                prediction = model(input, neigbor, flow)
         
         if opt.residual:
             prediction = prediction + bicubic
@@ -98,6 +107,7 @@ def eval():
         t1 = time.time()
         print("===> Processing: %s || Timer: %.4f sec." % (str(count), (t1 - t0)))
         save_img(prediction.cpu().data, str(count), True)
+        print('')
         #save_img(target, str(count), False)
         
         #prediction=prediction.cpu()

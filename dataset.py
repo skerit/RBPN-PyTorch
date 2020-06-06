@@ -63,7 +63,7 @@ def load_img_future(filepath, nFrames, scale, other_dataset):
                 temp = modcrop(Image.open(file_name1).convert('RGB'), scale).resize((int(target.size[0]/scale),int(target.size[1]/scale)), Image.BICUBIC)
                 neigbor.append(temp)
             else:
-                print('neigbor frame- is not exist')
+                print(' ↱ Neighboring frame',file_name1, 'does not exist')
                 temp=input
                 neigbor.append(temp)
             
@@ -75,6 +75,7 @@ def load_img_future(filepath, nFrames, scale, other_dataset):
         #random.shuffle(seq) #if random sequence
         for j in seq:
             neigbor.append(modcrop(Image.open(filepath+'/im'+str(j)+'.png').convert('RGB'), scale).resize((int(target.size[0]/scale),int(target.size[1]/scale)), Image.BICUBIC))
+
     return target, input, neigbor
 
 def get_flow(im1, im2):
@@ -219,18 +220,19 @@ class DatasetFromFolderTest(data.Dataset):
             target, input, neigbor = load_img_future(self.image_filenames[index], self.nFrames, self.upscale_factor, self.other_dataset)
         else:
             target, input, neigbor = load_img(self.image_filenames[index], self.nFrames, self.upscale_factor, self.other_dataset)
-            
+
         flow = [get_flow(input,j) for j in neigbor]
 
         bicubic = rescale_img(input, self.upscale_factor)
-        
+
         if self.transform:
+            print(' ↱ Transforming frames')
             target = self.transform(target)
             input = self.transform(input)
             bicubic = self.transform(bicubic)
             neigbor = [self.transform(j) for j in neigbor]
             flow = [torch.from_numpy(j.transpose(2,0,1)) for j in flow]
-            
+
         return input, target, neigbor, flow, bicubic
       
     def __len__(self):
