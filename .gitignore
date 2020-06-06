@@ -1,2 +1,16 @@
+# Ignore IDE specific files
+*.komodo*
+*.sublime*
+.idea/
 
+# Ignore special files
 .DS_Store
+.fuse*
+._*
+*.bin
+__pycache__/
+
+# Ignore training/result files
+Results/
+SPMCS/*/
+Vid4/*/
