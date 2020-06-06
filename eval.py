@@ -25,7 +25,10 @@ parser.add_argument('--upscale_factor', type=int, default=4, help="super resolut
 parser.add_argument('--testBatchSize', type=int, default=1, help='testing batch size')
 parser.add_argument('--gpu_mode', type=bool, default=True)
 parser.add_argument('--chop_forward', type=bool, default=False)
-parser.add_argument('--threads', type=int, default=1, help='number of threads for data loader to use')
+
+# Use 0 by default, because anything higher causes errors on Python 3.5
+parser.add_argument('--threads', type=int, default=0, help='number of threads for data loader to use')
+
 parser.add_argument('--seed', type=int, default=123, help='random seed to use. Default=123')
 parser.add_argument('--gpus', default=1, type=int, help='number of gpu')
 parser.add_argument('--data_dir', type=str, default='./Vid4')
